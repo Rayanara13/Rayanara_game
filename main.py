@@ -4,10 +4,64 @@ import random, math
 app = Ursina()
 camera.background_color = color.rgb(255, 165, 0)
 
-# камера сверху
-camera.orthographic = True
-camera.position = (0, 40, -20)
-camera.rotation_x = 60
+def _vec3(value):
+    """Утилита для гарантии, что позиция камеры хранится как Vec3."""
+    if isinstance(value, Vec3):
+        return value
+    return Vec3(*value)
+
+
+CAMERA_MODES = {
+    "global": {
+        "position": _vec3((0, 40, -20)),
+        "rotation_x": 60,
+        "orthographic": True,
+        "fov": 40,
+    },
+    "local": {
+        "position": _vec3((0, 18, -12)),
+        "rotation_x": 45,
+        "orthographic": False,
+        "fov": 65,
+    },
+}
+
+CAMERA_INTERPOLATION_SPEED = 3.5
+
+camera_mode = "global"
+camera_target_params = CAMERA_MODES[camera_mode].copy()
+
+camera.position = Vec3(camera_target_params["position"])
+camera.rotation_x = camera_target_params["rotation_x"]
+camera.orthographic = camera_target_params["orthographic"]
+camera.fov = camera_target_params["fov"]
+
+
+def set_camera_mode(mode_name):
+    """Изменяет целевые параметры камеры в зависимости от выбранного режима."""
+    global camera_mode, camera_target_params
+    if mode_name not in CAMERA_MODES or mode_name == camera_mode:
+        return
+
+    camera_mode = mode_name
+    camera_target_params = CAMERA_MODES[mode_name].copy()
+
+
+def _lerp(a, b, t):
+    return a + (b - a) * t
+
+
+def _update_camera(dt):
+    """Плавно приближает параметры камеры к целевым."""
+    if not camera_target_params:
+        return
+
+    factor = min(1, CAMERA_INTERPOLATION_SPEED * dt)
+    target_pos = camera_target_params["position"]
+    camera.position = camera.position + (target_pos - camera.position) * factor
+    camera.rotation_x = _lerp(camera.rotation_x, camera_target_params["rotation_x"], factor)
+    camera.fov = _lerp(camera.fov, camera_target_params["fov"], factor)
+    camera.orthographic = camera_target_params["orthographic"]
 
 # поле
 ground = Entity(model='plane', scale=30, color=color.yellow)
@@ -267,6 +321,11 @@ village = Village()
 info = Text(text='', position=(-.5, .45), scale=2, color=color.black)
 day_timer = 0
 
+def input(key):
+    if key == "g" or key == "scroll down":
+        set_camera_mode("global")
+    elif key == "l" or key == "scroll up":
+        set_camera_mode("local")
 
 def update():
     global day_timer, update_index
@@ -284,5 +343,6 @@ def update():
     info.text = (f'День: {village.day} | Еда: {village.food} | '
                  f'Население: {village.total_population} | Ферм: {len(village.farms)}')
 
+    _update_camera(time.dt)
 
 app.run()
