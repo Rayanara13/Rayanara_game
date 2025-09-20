@@ -135,10 +135,21 @@ class Village(Entity):
                 # обрезаем видимых жителей
                 while len(self.citizens) > self.total_population:
                     c = self.citizens.pop()
+                    c.alive = False
+                    if c.farm:
+                        c.farm.worker = None
+                        c.farm = None
                     destroy(c)
 
         # новые фермы
         workers = [c for c in self.citizens if c.alive and c.role != "farmworker"]
+        for farm in self.farms:
+            if (not farm.worker or not farm.worker.alive) and workers:
+                worker = workers.pop()
+                worker.role = "farmworker"
+                worker.farm = farm
+                farm.worker = worker
+
         while len(self.farms) < self.total_population and workers:
             tile = get_free_tile(self.position)
             if not tile:
