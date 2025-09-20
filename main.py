@@ -12,11 +12,87 @@ camera.rotation_x = 60
 # поле
 ground = Entity(model='plane', scale=30, color=color.yellow)
 
+
+REGION_COLORS = {
+    "plains": color.rgb(240, 220, 150),
+    "forest": color.rgb(90, 160, 90),
+    "mountain": color.rgb(160, 160, 170),
+}
+
+
+def _get_region_type(world_x, world_z):
+    """Возвращает тип региона для мировых координат плитки."""
+    # Используем комбинацию тригонометрических функций для получения плавных зон.
+    noise = (
+        math.sin(world_x * 0.35)
+        + math.cos(world_z * 0.35)
+        + math.sin((world_x + world_z) * 0.2)
+    ) / 3
+
+    if noise > 0.3:
+        return "mountain"
+    if noise < -0.2:
+        return "forest"
+    return "plains"
+
+def generate_world(tile_shape, size):
+    """Подготавливает плитки мира и создаёт визуальные объекты."""
+    tiles = []
+    half = size // 2
+
+    if tile_shape == "hex":
+        radius = half
+        for q in range(-radius, radius + 1):
+            for r in range(-radius, radius + 1):
+                s = -q - r
+                if abs(s) > radius:
+                    continue
+                world_x = math.sqrt(3) * (q + r / 2)
+                world_z = 1.5 * r
+                region_type = _get_region_type(world_x, world_z)
+                tile_entity = Entity(
+                    model='quad',
+                    rotation_x=90,
+                    color=REGION_COLORS[region_type],
+                    position=Vec3(world_x, 0.01, world_z),
+                    scale=(1.05, 1.05, 1),
+                )
+                tiles.append({
+                    "shape": tile_shape,
+                    "grid_coords": (q, r, s),
+                    "world_pos": Vec3(world_x, 0, world_z),
+                    "entity": tile_entity,
+                    "occupied": False,
+                    "region": region_type,
+                })
+    else:
+        for x in range(-half, half + 1):
+            for z in range(-half, half + 1):
+                region_type = _get_region_type(x, z)
+                tile_entity = Entity(
+                    model='quad',
+                    rotation_x=90,
+                    color=REGION_COLORS[region_type],
+                    position=Vec3(x, 0.01, z),
+                    scale=1.05,
+                )
+                tiles.append({
+                    "shape": tile_shape,
+                    "grid_coords": (x, z),
+                    "world_pos": Vec3(x, 0, z),
+                    "entity": tile_entity,
+                    "occupied": False,
+                    "region": region_type,
+                })
+
+    return tiles
+
 # ====== настройки ======
 FIELD_SIZE = 30
 HALF = FIELD_SIZE // 2
 MAX_RADIUS = 15
-occupied_tiles = set()
+TILE_SHAPE = "square"
+world_tiles = generate_world(TILE_SHAPE, FIELD_SIZE)
 
 VISIBLE_LIMIT = 300  # максимум видимых жителей
 update_index = 0     # для батч-обновления
@@ -24,13 +100,19 @@ update_index = 0     # для батч-обновления
 
 def get_free_tile(village_pos):
     """Находит свободную клетку на поле в пределах радиуса"""
-    for _ in range(200):
-        x = random.randint(-HALF, HALF)
-        z = random.randint(-HALF, HALF)
-        dist = math.sqrt((x - int(village_pos[0])) ** 2 + (z - int(village_pos[2])) ** 2)
-        if (x, z) not in occupied_tiles and dist <= MAX_RADIUS:
-            return x, z
-    return None
+    candidates = []
+    for tile in world_tiles:
+        if tile["occupied"] or tile["region"] != "plains":
+            continue
+        pos = tile["world_pos"]
+        dist = math.sqrt((pos.x - village_pos[0]) ** 2 + (pos.z - village_pos[2]) ** 2)
+        if dist <= MAX_RADIUS:
+            candidates.append(tile)
+
+    if not candidates:
+        return None
+
+    return random.choice(candidates)
 
 
 class Farm(Entity):
@@ -154,11 +236,12 @@ class Village(Entity):
             tile = get_free_tile(self.position)
             if not tile:
                 break
-            x, z = tile
-            pos = (x, 0.2, z)
-            new_farm = Farm(pos)
+            pos = tile["world_pos"]
+            farm_pos = (pos.x, 0.2, pos.z)
+            new_farm = Farm(farm_pos)
             self.farms.append(new_farm)
-            occupied_tiles.add(tile)
+            tile["occupied"] = True
+            tile["farm"] = new_farm
 
             worker = workers.pop()
             worker.role = "farmworker"
